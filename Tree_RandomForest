@@ -1,0 +1,175 @@
+
+
+# load and summarize data
+
+rm(list=ls())
+tlFLAG <- read.csv(file = "termLifeFLAG.csv")
+summary(tlFLAG)
+
+
+# remove variables that will not be used.
+
+
+tlFLAG <- tlFLAG[,-c(1,2,11,12,13,16)]
+
+# training and validation sets.
+
+
+library(caret)
+set.seed(1000)
+training.indices <- createDataPartition(tlFLAG$TERM_FLAG, p = 0.8, list = FALSE)
+tlFLAG.t <- tlFLAG[training.indices, ] 
+tlFLAG.v <- tlFLAG[-training.indices, ]
+rm(training.indices)
+
+
+# initial tree.
+
+library(rpart)
+set.seed(1234)
+
+#Set the parameters to get a fairly complex tree. A node can have has few as 2 observations, the default complexity parameter is used, and the tree can be 7 levels deep.
+tree1 <- rpart(TERM_FLAG~., data = tlFLAG.t, method = "class",
+             control = rpart.control(minbucket = 5, cp = 0.01, maxdepth = 7), 
+             parms = list(split = "gini"))
+
+
+
+#confusion matrix.
+
+
+
+pred <- predict(tree1, type = "class")
+
+confusionMatrix(pred, factor(tlFLAG.t$TERM_FLAG)) 
+
+
+# confusion matrix against the validation set
+
+
+pred.v <- predict(tree1, type = "class", newdata = tlFLAG.v)
+
+confusionMatrix(pred.v, factor(tlFLAG.v$TERM_FLAG)) 
+```
+
+# prune the tree using the optimal complexity parameter
+
+
+library(rpart.plot)
+tree2 <- prune(tree1, cp = tree1$cptable[which.min(tree1$cptable[, "xerror"]), "CP"])
+
+rpart.plot(tree2)
+
+pred2 <- predict(tree2, type = "class")
+
+confusionMatrix(pred2, factor(tlFLAG.t$TERM_FLAG))
+
+pred.v2 <- predict(tree2, type = "class", newdata = tlFLAG.v)
+
+confusionMatrix(pred.v2, factor(tlFLAG.v$TERM_FLAG)) 
+ 
+# select the complexity parameter using cross validation.
+
+
+set.seed(6)
+Grid <- expand.grid(cp=seq(0, 0.2, 0.001))
+fitControl <- trainControl(method = "cv", number = 6)
+tree3 <- train(factor(TERM_FLAG)~.,
+                data=tlFLAG.t,
+                method='rpart',
+                trControl = fitControl,
+                metric = "Accuracy",
+                tuneGrid = Grid,
+                na.action = na.omit,
+                parms=list(split='Gini'))
+
+tree3$finalModel 
+
+plot(tree3)
+rpart.plot(tree3$finalModel, extra=4)
+
+pred3 <- predict(tree3, type = "raw")
+
+confusionMatrix(pred3, factor(tlFLAG.t$TERM_FLAG))
+
+pred.v3 <- predict(tree3, type = "raw", newdata = tlFLAG.v)
+
+confusionMatrix(pred.v3, factor(tlFLAG.v$TERM_FLAG)) 
+
+
+#fits a random forest model using some arbitrary parameters
+
+
+# Train the model
+library(randomForest)
+set.seed(1000)
+rf1 <- randomForest(formula = factor(TERM_FLAG)~., 
+                         data = tlFLAG.t,
+                         ntree = 500,
+                         mtry = 4, # The number of features to use at each split
+                         sampsize = floor(0.6 * nrow(tlFLAG.t)), # The number of observations to use in each tree
+                         nodesize = 5, # The minimum number of observations in each leaf node of a tree - this controls complexity
+                         importance = TRUE
+                         )
+
+pred <- predict(rf1, tlFLAG.t)
+
+confusionMatrix(pred, factor(tlFLAG.t$TERM_FLAG))
+
+pred.v <- predict(rf1, newdata = tlFLAG.v)
+
+confusionMatrix(pred.v, factor(tlFLAG.v$TERM_FLAG)) 
+
+
+set.seed(42)
+#Set up the grid.
+rfGrid <- expand.grid(mtry = c(1:7)) 
+
+#Set the controls
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 5, 
+                     repeats = 3) 
+
+#Train the model
+rf2 <- train(factor(TERM_FLAG) ~.,
+                        data = tlFLAG.t,
+                        method = "rf", 
+                        trControl = ctrl,
+                        tuneGrid = rfGrid,
+                        ntree = 500, nodesize = 5,
+                        importance = TRUE
+                        )
+
+#View the output
+rf2
+ggplot(rf2)
+
+#Obtain the confusion matrices
+pred2 <- predict(rf2, tlFLAG.t)
+
+confusionMatrix(pred2, factor(tlFLAG.t$TERM_FLAG))
+
+pred2.v <- predict(rf2, newdata = tlFLAG.v)
+
+confusionMatrix(pred2.v, factor(tlFLAG.v$TERM_FLAG)) 
+
+#Obtain the importance of the features
+varImp(rf2)
+                     
+
+
+set.seed(1234)
+
+tree.full <- rpart(TERM_FLAG~., data = tlFLAG, method = "class",
+             control = rpart.control(minbucket = 5, cp = 0.005, maxdepth = 7), 
+             parms = list(split = "gini"))
+
+tree.full2 <- prune(tree.full, cp = tree.full$cptable[which.min(tree.full$cptable[, "xerror"]), "CP"])
+
+rpart.plot(tree.full2)
+
+pred.full2 <- predict(tree.full2, type = "class")
+
+confusionMatrix(pred.full2, factor(tlFLAG$TERM_FLAG))
+
+
