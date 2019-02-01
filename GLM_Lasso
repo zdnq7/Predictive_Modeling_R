@@ -1,0 +1,135 @@
+
+
+tlFACE <- read.csv("termlife.csv")
+
+summary(tlFACE)
+
+
+
+tlFACE <- tlFACE[,c(1,3,11,12)]
+
+library(caret)
+set.seed(1000)
+summary(tlFACE$FACE)
+tlFACE$logFACE <- log(tlFACE$FACE)
+tlFACE$logINCOME <- log(tlFACE$INCOME)
+tlFACE$logCHARITY <- log(tlFACE$CHARITY)
+tlFACE$AGEdiff <- log(tlFACE$CHARITY)
+tlFACE$FACEratio <- tlFACE$FACE/tlFACE$INCOME
+training.indices <- createDataPartition(tlFACE$FACE, p = 0.8, list = FALSE)
+tlFACE.t <- tlFACE[training.indices, ] 
+tlFACE.v <- tlFACE[-training.indices, ]
+rm(training.indices)
+
+
+
+f.FACE <- as.formula("FACE~GENDER+AGE+MARSTAT+EDUCATION+SAGE+SEDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+
+f.logFACE <- as.formula("logFACE~GENDER+AGE+MARSTAT+EDUCATION+SAGE+SEDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+
+f.FACEratio <- as.formula("FACEratio~GENDER+AGE+MARSTAT+EDUCATION+SAGE+SEDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+
+
+normal.logFACE <- glm(f.logFACE, data=tlFACE.t)
+summary(normal.logFACE)
+
+
+# backward selection
+drop1(normal.logFACE, test = "LRT")
+
+library(MASS)
+stepAIC(normal.logFACE, direction = "backward")
+
+
+
+f.logFACE2 <- as.formula("logFACE~GENDER+AGE+MARSTAT+EDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+normal.logFACE2 <- glm(f.logFACE2, data=tlFACE.t)
+summary(normal.logFACE2)
+
+
+#diagnostics
+
+library(ggplot2)
+qplot(x = normal.logFACE2$fitted.values, y = residuals(normal.logFACE2))
+plot(normal.logFACE2)
+
+
+exp.pred <- exp(predict(normal.logFACE2, newdata = tlFACE.v))
+
+rmse <- sqrt(sum((exp.pred - tlFACE.v$FACE)^2)/nrow(tlFACE.v))
+
+
+gamma.FACE <- glm(f.FACE, data=tlFACE.t, family = Gamma(link="log"), maxit = 500)
+summary(gamma.FACE)
+
+f.FACE2 <- as.formula("FACE~GENDER+AGE+MARSTAT+EDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+gamma.FACE2 <- glm(f.FACE2, data=tlFACE.t, family = Gamma(link="log"))
+summary(gamma.FACE2)
+
+f.FACE3 <- as.formula("FACE~GENDER+MARSTAT+EDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+gamma.FACE3 <- glm(f.FACE3, data=tlFACE.t, family = Gamma(link="log"))
+summary(gamma.FACE3)
+
+qplot(x = gamma.FACE2$fitted.values, y = residuals(gamma.FACE2))
+plot(gamma.FACE2)
+
+
+#Get the predicted values for the validation set.
+#Need to set type = "response" to get the predictions on the correct scale
+pred <- predict(gamma.FACE2, newdata = tlFACE.v, type = "response")
+
+#Calcuate the root mean squared error
+rmse <- sqrt(sum((pred - tlFACE.v$FACE)^2)/nrow(tlFACE.v))
+rmse
+
+ig.FACE <- glm(f.FACE2, data=tlFACE.t, family = inverse.gaussian(link="log"))
+summary(ig.FACE)
+
+f.FACEratio2 <- as.formula("FACEratio~GENDER+AGE+MARSTAT+EDUCATION+NUMHH+logINCOME+logCHARITY+AGEdiff ")
+gamma.FACEratio2 <- glm(f.FACEratio2, data=tlFACE.t, family = Gamma(link="log"))
+summary(gamma.FACEratio2)
+```
+
+As before, there are convergence problems when trying to drop variables. We check the current model, noting that predctions must be multiplied by INCOME to predict FACE.
+
+qplot(x = gamma.FACEratio2$fitted.values, y = residuals(gamma.FACEratio2))
+plot(gamma.FACEratio2)
+
+#Get the predicted values for the validation set.
+pred <- predict(gamma.FACEratio2, newdata = tlFACE.v, type = "response")*exp(tlFACE.v$logINCOME)
+
+#Calcuate the root mean squared error
+rmse <- sqrt(sum((pred - tlFACE.v$FACE)^2)/nrow(tlFACE.v))
+rmse
+
+
+
+
+library(glmnet)
+
+# Default values are used. 
+# The formula f.logFACE is still available.
+# glmnet requires a model matrix. We begin by setting a seed and creating the model matrix.
+set.seed(42)
+
+X <- model.matrix(f.logFACE, tlFACE.t)
+
+lasso.logFACE <- cv.glmnet(x = X, 
+            y = tlFACE.t$logFACE,
+            family = "gaussian",
+            alpha = 1)
+
+
+
+plot(lasso.logFACE)
+
+lasso.best <- glmnet(x = X, 
+            y = tlFACE.t$logFACE,
+            family = "gaussian", lambda = lasso.logFACE$lambda.min,
+            alpha = 1)
+X.test <- model.matrix(f.logFACE, tlFACE.v)
+lasso.best$beta
+lasso.best.predict <- predict(lasso.best, newx=X.test, type = "response")
+rmse <- sqrt(sum((exp(lasso.best.predict) - tlFACE.v$FACE)^2)/nrow(tlFACE.v))
+rmse
+
