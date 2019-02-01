@@ -1,0 +1,26 @@
+
+termLife <- read.csv(file = "TermLife.csv")
+summary(termLife)
+
+library(ggplot2)
+plot.base <- ggplot(data = termLife) + geom_bar()
+plot.base + aes(x=TERM_FLAG)
+
+plot.base <- ggplot(data = termLife) + geom_histogram()
+plot.base + aes(x=FACE)
+
+termLife.pos <- termLife[termLife$FACE>0, ]
+plot.base <- ggplot(data = termLife.pos) + geom_histogram()
+plot.base + aes(x=log(FACE))
+
+termLife.char <- termLife[termLife$CHARITY>0, ]
+plot.base <- ggplot(data = termLife.char) + geom_histogram()
+plot.base + aes(x=CHARITY)
+plot.base + aes(x=log(CHARITY))
+
+plot.base.pos <- ggplot(data=termLife.pos,
+            mapping = aes(x =INCOME,
+                          y = FACE))
+plot.base.pos + geom_point() +
+  geom_smooth(method = "loess") +
+  scale_x_log10() + scale_y_log10()
